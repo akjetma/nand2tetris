@@ -4,39 +4,39 @@
             [n2t.vm-translator.code-writer :as writer]
             [clojure.string :as str]
             [clojure.pprint :refer [pprint]]
-            [clojure.core.match :refer [match]]))
+            [clojure.java.io :as io])
+  (:gen-class))
 
+(defn get-filename
+  [path]
+  (re-find #"^(?:[^.]+)" (.getName (io/file path))))
 
+(defn parent
+  [path]
+  (.getParent (io/file path)))
 
-;; command types
-;; 1. command
-;; 2. command arg
-;; 3. command arg1 arg2
+(defn process-line
+  [base line-no line]
+  (->> line
+       (parser/parse)
+       (writer/write base line-no)
+       (concat [(str "// input: " line)])))
 
-;; memory layout
-;; 0-15:        virtual registers
-;; 16-255:      static variables
-;; 256-2047:    stack
-;; 2048-16483:  heap
-;; 16384–24575: memory mapped I/O
-
-(defn prepare-file
-  "Removes comments, blank lines, etc. from a file string,
-  returning a vector of command strings."
-  [file-string]
-  (->> (str/split file-string #"\n")
-       (mapv util/remove-comments)
-       (mapv util/compress-whitespace)
-       (remove str/blank?)))
-
-(defn run-test []
-  (->> "resources/vm-translator/test/BasicTest.vm"
-       (slurp)
-       (prepare-file)
-       (mapv parser/parse)
-       (mapv #(assoc % :filename "BasicTest"))
-       (map-indexed #(assoc %2 :line-no %1))
-       (mapv writer/write)
-       (apply concat)
-       (str/join "\n")
-       (spit "resources/vm-translator/test/BasicTest.asm")))
+(defn -main
+  [in-path]
+  (let [base (get-filename in-path)
+        out-path (str (parent in-path) "/" base ".asm")
+        process (partial process-line base)]
+    (with-open [output (io/writer out-path)]
+      (with-open [input (io/reader in-path)]
+        (->> input
+             (line-seq)
+             (mapv util/remove-comments)
+             (mapv util/compress-whitespace)
+             (remove str/blank?)
+             (map-indexed process)
+             (apply concat)
+             (mapv (fn [line]
+                     (.write output line)
+                     (.write output "\n")))
+             (doall))))))

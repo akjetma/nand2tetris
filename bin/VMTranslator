@@ -1,0 +1,2 @@
+#!/bin/bash
+java -jar n2t-0.1.0-SNAPSHOT-standalone.jar $1

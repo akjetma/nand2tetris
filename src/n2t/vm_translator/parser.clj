@@ -4,32 +4,102 @@
             [clojure.spec.alpha :as s]
             [n2t.util :as util]))
 
-(defn command-type
-  [{:keys [command]}]
-  (case command
-    (:command/add :command/sub :command/neg
-     :command/eq  :command/gt  :command/lt
-     :command/and :command/or  :command/not)
-    :command-type/arithmetic
+;; -------------------------------------------------------- Conformers
 
-    :command/push
-    :command-type/push
-    
-    :command/pop
-    :command-type/pop))
+(defn x-keyword?
+  [x]
+  (cond (keyword? x) x
+        (string? x)  (keyword x)
+        :else        :clojure.spec/invalid))
 
-(defn parse
-  [command-string]
-  (as-> command-string $
-    (str/split $ #" ")
-    (zipmap [:command :arg1 :arg2] $)
-    (update $ :command (partial keyword "command"))
-    (assoc $ 
-           :command-type (command-type $)
-           :input-string command-string)))
+(defn x-int?
+  [x]
+  (cond (int? x)    x
+        (string? x) (try
+                      (Integer/parseInt x 10)
+                      (catch NumberFormatException e
+                        :clojure.spec/invalid))
+        :else       :clojure.spec/invalid))
 
-(defn parse-commands
-  [command-strings]
-  (->> command-strings
-       (mapv parse)))
+(defn x-vec?
+  [x]
+  (cond (vector? x) x
+        (string? x) (str/split x #" ")
+        :else       :clojure.spec/invalid))
 
+;; ------------------------------------------------------- Instruction
+
+(s/def :instruction.arithmetic/bitwise
+  #{:add :sub :and :or})
+
+(s/def :instruction.arithmetic/unary
+  #{:neg :not})
+
+(s/def :instruction.arithmetic/comparison
+  #{:eq :gt :lt})
+
+(s/def ::arithmetic-instruction
+  (s/or :bitwise :instruction.arithmetic/bitwise
+        :unary :instruction.arithmetic/unary
+        :comparison :instruction.arithmetic/comparison))
+
+(s/def ::memory-instruction
+  #{:push :pop})
+
+(s/def ::instruction 
+  (s/or :arithmetic ::arithmetic-instruction
+        :memory ::memory-instruction))
+
+;; ------------------------------------------------------------- Arg 1
+
+(s/def :segment/constant
+  #{:constant})
+
+(s/def :segment/dynamic
+  #{:local :argument :this :that})
+
+(s/def :segment/fixed
+  #{:pointer :temp})
+
+(s/def :segment/static
+  #{:static})
+
+(s/def ::segment
+  (s/or :constant :segment/constant
+        :dynamic :segment/dynamic
+        :fixed :segment/fixed
+        :static :segment/static))
+
+(s/def ::arg1
+  (s/or :segment ::segment))
+
+;; ------------------------------------------------------------- Arg 2
+
+(s/def ::segment-index
+  (s/int-in 0 65536))
+
+(s/def ::arg2
+  (s/or :segment-index ::segment-index))
+
+;; ----------------------------------------------------------- Command
+
+(s/def ::arithmetic-command
+  (s/cat :instruction (s/and (s/conformer x-keyword?) 
+                             ::arithmetic-instruction)))
+
+(s/def ::memory-command
+  (s/cat :instruction (s/and (s/conformer x-keyword?)
+                             ::memory-instruction)
+         :segment (s/and (s/conformer x-keyword?)
+                         ::segment)
+         :index (s/and (s/conformer x-int?)
+                       ::segment-index)))
+
+(s/def ::command
+  (s/and (s/conformer x-vec?)
+         (s/or :arithmetic ::arithmetic-command
+               :memory ::memory-command)))
+
+(defn parse-line
+  [line]
+  (s/conform ::command line))

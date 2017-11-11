@@ -16,145 +16,6 @@
 ;;        |   5-12  | temp segment
 ;;        |  13-15  | general purpose registers
 
-;; ---------------------------------------------------------- constant
-
-;; push constant n
-;; ---------------
-;; @[n]
-;; D=A
-;; @SP
-;; A=M
-;; M=D
-;; @SP
-;; M=M+1
-
-(defn access-constant
-  [n]
-  [(str "@" n)])
-
-(defn read-constant
-  [n]
-  (concat (access-constant n)
-          ["D=A"]))
-
-;; --------------------------------------------------- dynamic segment
-
-;; push [local, argument, this, that] n
-;; ------------------------------------
-;; @[n]
-;; D=A
-;; @[LCL, ARG, THIS, THAT]
-;; A=M+D
-;; ------------------------------------
-;; D=M
-;; ------------------------------------
-;; @SP
-;; A=M
-;; M=D
-;; @SP
-;; M=M+1
-
-(def vm-dseg->asm-dseg
-  {"local"    "LCL"
-   "argument" "ARG"
-   "this"     "THIS"
-   "that"     "THAT"})
-
-(defn access-dynamic-segment
-  [dseg n]
-  [(str "@" n)
-   "D=A"
-   (->> dseg 
-        (get vm-dseg->asm-dseg) 
-        (str "@"))
-   "A=M+D"])
-
-(defn read-dynamic-segment
-  [dseg n]
-  (concat (access-dynamic-segment dseg n)
-          ["D=M"]))
-
-(defn pop-dseg
-  [dseg n]
-  [(str "@" n)
-   "D=A"
-   (->> dseg
-        (get vm-dseg->asm-dseg)
-        (str "@"))
-   "D=M+D"
-   "@R13"
-   "M=D"
-   "@SP"
-   "M=M-1"
-   "A=M"
-   "D=M"
-   "@R13"
-   "A=M"
-   "M=D"])
-
-;; ----------------------------------------------------- fixed segment
-
-;; push [pointer, temp] n
-;; ----------------------
-;; @[(pointer, temp) + n]
-;; D=M
-;; ----------------------
-;; @SP
-;; A=M
-;; M=D
-;; @SP
-;; M=M+1
-
-(def vm-fseg->asm-base
-  {"pointer" 3
-   "temp"    5})
-
-(defn access-fixed-segment
-  [fseg n]
-  [(->> fseg
-        (get vm-fseg->asm-base)
-        (+ (read-string n))
-        (str "@"))])
-
-(defn read-fixed-segment
-  [fseg n]
-  (concat (access-fixed-segment fseg n)
-          ["D=M"]))
-
-(defn write-fixed-segment
-  [fseg n]
-  (concat (access-fixed-segment fseg n)
-          ["M=D"]))
-
-;; ------------------------------------------------------------ static
-
-;; push static n
-;; -------------
-;; @[filename].n
-;; D=M
-;; -------------
-;; @SP
-;; A=M
-;; M=D
-;; @SP
-;; M=M+1
-
-(defn access-static
-  [filename n]
-  [(str "@" filename "." n)])
-
-(defn read-static
-  [filename n]
-  (concat (access-static filename n)
-          ["D=M"]))
-
-(defn write-static
-  [filename n]
-  (concat (access-static filename n)
-          ["M=D"]))
-
-;; ------------------------------------------------------------- stack
-
 (def push-stack
   ["@SP"
    "A=M"
@@ -168,88 +29,162 @@
    "A=M"
    "D=M"])
 
-(defn write-push-pop
-  [{segment :arg1 index :arg2 filename :filename command :command}]
-  (match [command segment]
-    [:command/push "constant"] 
-    (concat (read-constant index) push-stack)
-    
-    [:command/push (:or "local" "argument" "this" "that")]
-    (concat (read-dynamic-segment segment index) push-stack)
-    [:command/pop (:or "local" "argument" "this" "that")]
-    (pop-dseg segment index)
+(defn at
+  [x]
+  (str "@" x))
 
-    [:command/push (:or "pointer" "temp")]
-    (concat (read-fixed-segment segment index) push-stack)
-    [:command/pop (:or "pointer" "temp")]
-    (concat pop-stack (write-fixed-segment segment index))
+;; goto constant n
+;; ---------------
+;; @[n]
 
-    [:command/push "static"]
-    (concat (read-static filename index) push-stack)
-    [:command/pop "static"]
-    (concat pop-stack (write-static filename index))))
+(defn push-constant
+  [n]
+  (concat [(at n)
+           "D=A"]
+          push-stack))
+
+;; goto [local, argument, this, that] n
+;; ------------------------------------
+;; @[n]
+;; D=A
+;; @[LCL, ARG, THIS, THAT]
+;; A=M+D
+
+(def dynamic-label
+  {:local    "LCL"
+   :argument "ARG"
+   :this     "THIS"
+   :that     "THAT"})
+
+(defn goto-dynamic
+  [segment offset]
+  [(at offset)
+   "D=A"
+   (at (segment dynamic-label))
+   "A=M+D"])
+
+(defn push-dynamic
+  [segment offset]
+  (concat (goto-dynamic segment offset)
+          ["D=M"]
+          push-stack))
+
+(defn pop-dynamic
+  [segment offset]
+  (concat (goto-dynamic segment offset)
+          ["D=A"
+           "@R13"
+           "M=D"]
+          pop-stack
+          ["@R13"
+           "A=M"
+           "M=D"]))
+
+;; goto [pointer, temp] n
+;; ----------------------
+;; @[(pointer, temp) + n]
+
+(def fixed-index
+  {:pointer 3
+   :temp    5})
+
+(defn goto-fixed
+  [segment offset]
+  [(at (+ (segment fixed-index) offset))])
+
+(defn push-fixed
+  [segment offset]
+  (concat (goto-fixed segment offset)
+          ["D=M"]
+          push-stack))
+
+(defn pop-fixed
+  [segment offset]
+  (concat pop-stack
+          (goto-fixed segment offset)
+          ["M=D"]))
+
+;; ------------------------------------------------------------ static
+
+;; goto static n
+;; -------------
+;; @[filename].[n]
+
+(defn goto-static
+  [base index]
+  [(at (str base "." index))])
+
+(defn push-static
+  [base index]
+  (concat (goto-static base index)
+          ["D=M"]
+          push-stack))
+
+(defn pop-static
+  [base index]
+  (concat pop-stack
+          (goto-static base index)
+          ["M=D"]))
 
 ;; -------------------------------------------------------- arithmetic
 
-(def add-sub-and-or-base
+(def bitwise-base
   ["@SP"
    "M=M-1"
    "A=M"
    "D=M"
    "A=A-1"])
 
-(defn mth-add 
-  [_]
-  (concat add-sub-and-or-base
-          ["M=M+D"]))
-
-(defn mth-sub 
-  [_]
-  (concat add-sub-and-or-base
-          ["M=M-D"]))
-
-(defn mth-and
-  [_]
-  (concat add-sub-and-or-base
-          ["M=M&D"]))
-
-(defn mth-or
-  [_]
-  (concat add-sub-and-or-base
-          ["M=M|D"]))
-
-(defn mth-neg
-  [_]
+(def unary-base
   ["@SP"
-   "A=M-1"
-   "M=-M"])
+   "A=M-1"])
 
-(defn mth-not
-  [_]
-  ["@SP"
-   "A=M-1"
-   "M=!M"])
+(def simple-arithmetic-bases
+  {:bitwise bitwise-base
+   :unary   unary-base})
 
-;; -------------------------------------------------------- comparison
+(def bitwise-ops
+  {:add "M+D"
+   :sub "M-D"
+   :and "M&D"
+   :or  "M|D"})
 
-(defn comparison-base
-  [key]
-  [(str "(TRUE_" key ")")
+(def unary-ops
+  {:neg "-M"
+   :not "!M"})
+
+(def simple-arithmetic-ops
+  {:bitwise bitwise-ops
+   :unary   unary-ops})
+
+(defn arithmetic-simple
+  [[base op]]
+  (conj (get simple-arithmetic-bases base)
+        (str "M=" (get-in simple-arithmetic-ops [base op]))))
+
+(defn comparison-branch
+  [branch-key]
+  [(str "(TRUE_" branch-key ")")
    "@SP"
    "A=M-1"
    "M=-1"
-   (str "@CONTINUE_" key)
+   (str "@CONTINUE_" branch-key)
    "0;JMP"
-   (str "(FALSE_" key ")")
+   (str "(FALSE_" branch-key ")")
    "@SP"
    "A=M-1"
    "M=0"
-   (str "@CONTINUE_" key)
+   (str "@CONTINUE_" branch-key)
    "0;JMP"
-   (str "(CONTINUE_" key ")")])
+   (str "(CONTINUE_" branch-key ")")])
 
-(defn comparison 
-  [jump {key :line-no}]
+(def comparison-jump-instructions
+  {:eq "JEQ"
+   :gt "JGT"
+   :lt "JLT"})
+
+(defn arithmetic-comparison
+  [line-no op]
   (concat
    ["@SP"
     "M=M-1"
@@ -257,41 +192,39 @@
     "D=M"
     "A=A-1"
     "D=M-D"
-    (str "@TRUE_" key)
-    (str "D;" jump)
-    (str "@FALSE_" key)
+    (str "@TRUE_" line-no)
+    (str "D;" (get comparison-jump-instructions op))
+    (str "@FALSE_" line-no)
     "0;JMP"]
-   (comparison-base key)))
-
-(def mth-eq (partial comparison "JEQ"))
-(def mth-gt (partial comparison "JGT"))
-(def mth-lt (partial comparison "JLT"))
-
-(def vm-math->asm-math
-  {:command/add mth-add
-   :command/sub mth-sub
-   :command/eq mth-eq
-   :command/lt mth-lt
-   :command/gt mth-gt
-   :command/neg mth-neg
-   :command/and mth-and
-   :command/or mth-or
-   :command/not mth-not})
-
-(defn write-arithmetic
-  [command]
-  ((get vm-math->asm-math (:command command))
-   command))
-
-(def command-type->writer
-  {:command-type/push write-push-pop
-   :command-type/pop  write-push-pop
-   :command-type/arithmetic  write-arithmetic})
+   (comparison-branch line-no)))
 
 (defn write
-  [{:keys [command-type input-string] :as command}]
-  (let [write-fn (get command-type->writer command-type)]
-    (concat
-     [(str "// " input-string)]
-     (write-fn command))))
+  [base line-no command]
+  (match command    
+    [:arithmetic {:instruction (([(:or :bitwise :unary) _] :seq) :as instruction)}]
+    (arithmetic-simple instruction)
+
+    [:arithmetic {:instruction [:comparison op]}]
+    (arithmetic-comparison line-no op)
+
+    [:memory {:instruction :push :segment [:constant _] :index index}]
+    (push-constant index)
+
+    [:memory {:instruction :push :segment [:static _] :index index}]
+    (push-static base index)
+
+    [:memory {:instruction :pop :segment [:static _] :index index}]
+    (pop-static base index)
+
+    [:memory {:instruction :push :segment [:dynamic segment] :index offset}]
+    (push-dynamic segment offset)
+
+    [:memory {:instruction :pop :segment [:dynamic segment] :index offset}]
+    (pop-dynamic segment offset)
+
+    [:memory {:instruction :push :segment [:fixed segment] :index offset}]
+    (push-fixed segment offset)
+
+    [:memory {:instruction :pop :segment [:fixed segment] :index offset}]
+    (pop-fixed segment offset)))
 
