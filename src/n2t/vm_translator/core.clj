@@ -31,6 +31,12 @@
        (map-indexed (partial process-line base))
        (apply concat)))
 
+(defn check
+  [file]
+  (let [base (get-filename file)]
+    (with-open [input (io/reader file)]
+      (process-lines base (line-seq input)))))
+
 (defn -main
   [in-path]
   (let [base (get-filename in-path)

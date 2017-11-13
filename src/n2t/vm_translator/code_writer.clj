@@ -201,7 +201,7 @@
     "0;JMP"]
    (comparison-branch line-no)))
 
-(defn declare-label
+(defn label-declaration
   [base label]
   [(lbl base label)])
 
@@ -218,6 +218,59 @@
    (at base label)
    "D;JNE"])
 
+(defn fn-declaration
+  [fn-name num-locals]
+  (->> (push-constant 0)
+       (repeat num-locals)
+       (apply concat)
+       (concat [(lbl fn-name)])))
+
+(defn fn-return
+  []
+  ["@LCL"   ;; set R13 to frame ...
+   "D=M"
+   "@R13"
+   "M=D"
+   "@5"     ;; set R14 to return address *(frame - 5) ...
+   "D=A"
+   "@LCL"
+   "A=M-D"
+   "D=M"
+   "@R14"
+   "M=D"
+   "@SP"    ;; set return value for caller (replace arg0 with top of stack) ...
+   "A=M-1"
+   "D=M"
+   "@ARG"   
+   "A=M"
+   "M=D"
+   "D=A"    ;; set SP for caller (arg0 + 1) ...
+   "@SP"
+   "M=D+1"
+   "@R13"   ;; reset THAT ...
+   "AM=M-1"
+   "D=M"
+   "@THAT"
+   "M=D"    
+   "@R13"   ;; reset THIS ...
+   "AM=M-1"
+   "D=M"
+   "@THIS"
+   "M=D"
+   "@R13"   ;; reset ARG ...
+   "AM=M-1"
+   "D=M"
+   "@ARG"
+   "M=D"
+   "@R13"   ;; reset LCL ...
+   "AM=M-1"
+   "D=M"
+   "@LCL"
+   "M=D"
+   "@R14"   ;; go to return address ...
+   "A=M"
+   "0;JMP"])
+
 (defn write
   [base line-no command]
   (match command    
@@ -227,8 +280,8 @@
     [:arithmetic {:instruction [:comparison op]}]
     (arithmetic-comparison line-no op)
 
-    [:memory {:instruction :push :segment [:constant _] :index index}]
-    (push-constant index)
+    [:memory {:instruction :push :segment [:constant _] :index n}]
+    (push-constant n)
 
     [:memory {:instruction :push :segment [:static _] :index index}]
     (push-static base index)
@@ -249,10 +302,16 @@
     (pop-fixed segment offset)
 
     [:program-flow {:instruction :label :label label}]
-    (declare-label base label)
+    (label-declaration base label)
 
     [:program-flow {:instruction :goto :label label}]
     (goto base label)
 
     [:program-flow {:instruction :if-goto :label label}]
-    (if-goto base label)))
+    (if-goto base label)
+
+    [:function {:fn-name fn-name :num-locals num-locals}]
+    (fn-declaration fn-name num-locals)
+
+    [:return _]
+    (fn-return)))
