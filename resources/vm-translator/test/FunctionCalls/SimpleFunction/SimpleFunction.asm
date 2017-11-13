@@ -1,5 +1,12 @@
 
-// input: function SimpleFunction.test 2
+
+
+
+// class: SimpleFunction
+
+
+
+// line: function SimpleFunction.test 2
 (SimpleFunction.test)
 @0
 D=A
@@ -16,7 +23,7 @@ M=D
 @SP
 M=M+1
 
-// input: push local 0
+// line: push local 0
 @0
 D=A
 @LCL
@@ -28,7 +35,7 @@ M=D
 @SP
 M=M+1
 
-// input: push local 1
+// line: push local 1
 @1
 D=A
 @LCL
@@ -40,7 +47,7 @@ M=D
 @SP
 M=M+1
 
-// input: add
+// line: add
 @SP
 M=M-1
 A=M
@@ -48,12 +55,12 @@ D=M
 A=A-1
 M=M+D
 
-// input: not
+// line: not
 @SP
 A=M-1
 M=!M
 
-// input: push argument 0
+// line: push argument 0
 @0
 D=A
 @ARG
@@ -65,7 +72,7 @@ M=D
 @SP
 M=M+1
 
-// input: add
+// line: add
 @SP
 M=M-1
 A=M
@@ -73,7 +80,7 @@ D=M
 A=A-1
 M=M+D
 
-// input: push argument 1
+// line: push argument 1
 @1
 D=A
 @ARG
@@ -85,7 +92,7 @@ M=D
 @SP
 M=M+1
 
-// input: sub
+// line: sub
 @SP
 M=M-1
 A=M
@@ -93,7 +100,7 @@ D=M
 A=A-1
 M=M-D
 
-// input: return
+// line: return
 @LCL
 D=M
 @R13

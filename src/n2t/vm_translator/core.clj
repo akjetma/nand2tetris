@@ -66,10 +66,9 @@
 
 (defn -main
   [in-path]
-  (output-file
-   (attach-header
-    (if (is-directory? in-path)
-      (process-folder in-path)
-      (process-file in-path))
-    in-path)
-   in-path))
+  (if (is-directory? in-path)
+    (-> (process-folder in-path)
+        (attach-header in-path)
+        (output-file in-path))
+    (-> (process-file in-path)
+        (output-file (parent in-path)))))
