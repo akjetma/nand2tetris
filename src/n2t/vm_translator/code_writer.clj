@@ -30,8 +30,12 @@
    "D=M"])
 
 (defn at
-  [x]
-  (str "@" x))
+  ([x] (str "@" x))
+  ([base x] (str "@" base "$" x)))
+
+(defn lbl
+  ([x] (str "(" x ")"))
+  ([base x] (str "(" base "$" x ")")))
 
 ;; goto constant n
 ;; ---------------
@@ -187,8 +191,7 @@
   [line-no op]
   (concat
    ["@SP"
-    "M=M-1"
-    "A=M"
+    "AM=M-1"
     "D=M"
     "A=A-1"
     "D=M-D"
@@ -197,6 +200,23 @@
     (str "@FALSE_" line-no)
     "0;JMP"]
    (comparison-branch line-no)))
+
+(defn declare-label
+  [base label]
+  [(lbl base label)])
+
+(defn goto
+  [base label]
+  [(at base label)
+   "0;JMP"])
+
+(defn if-goto
+  [base label]
+  ["@SP"
+   "AM=M-1"
+   "D=M"
+   (at base label)
+   "D;JNE"])
 
 (defn write
   [base line-no command]
@@ -226,5 +246,13 @@
     (push-fixed segment offset)
 
     [:memory {:instruction :pop :segment [:fixed segment] :index offset}]
-    (pop-fixed segment offset)))
+    (pop-fixed segment offset)
 
+    [:program-flow {:instruction :label :label label}]
+    (declare-label base label)
+
+    [:program-flow {:instruction :goto :label label}]
+    (goto base label)
+
+    [:program-flow {:instruction :if-goto :label label}]
+    (if-goto base label)))

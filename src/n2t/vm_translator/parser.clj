@@ -116,7 +116,7 @@
                :arithmetic ::arithmetic-command
                :memory ::memory-command)))
 
-(defn parse-line
+(defn parse
   [line]
   (let [parsed-line (s/conform ::command line)]
     (if (= :clojure.spec.alpha/invalid parsed-line)

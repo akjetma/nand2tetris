@@ -20,23 +20,28 @@
   (->> line
        (parser/parse)
        (writer/write base line-no)
-       (concat [(str "// input: " line)])))
+       (concat [(str "\n// input: " line)])))
+
+(defn process-lines
+  [base raw-lines]
+  (->> raw-lines
+       (mapv util/remove-comments)
+       (mapv util/compress-whitespace)
+       (remove str/blank?)
+       (map-indexed (partial process-line base))
+       (apply concat)))
 
 (defn -main
   [in-path]
   (let [base (get-filename in-path)
-        out-path (str (parent in-path) "/" base ".asm")
-        process (partial process-line base)]
+        out-path (str (parent in-path) "/" base ".asm")]
     (with-open [output (io/writer out-path)]
       (with-open [input (io/reader in-path)]
         (->> input
              (line-seq)
-             (mapv util/remove-comments)
-             (mapv util/compress-whitespace)
-             (remove str/blank?)
-             (map-indexed process)
-             (apply concat)
+             (process-lines base)
              (mapv (fn [line]
                      (.write output line)
-                     (.write output "\n")))
+                     (.write output "\n")
+                     line))
              (doall))))))
