@@ -15,12 +15,16 @@
   [path]
   (.getParent (io/file path)))
 
+(defn is-directory?
+  [path]
+  (.isDirectory (io/file path)))
+
 (defn process-line
   [base line-no line]
   (->> line
        (parser/parse)
        (writer/write base line-no)
-       (concat [(str "\n// input: " line)])))
+       (concat [(str "\n// line: " line)])))
 
 (defn process-lines
   [base raw-lines]
@@ -31,23 +35,41 @@
        (map-indexed (partial process-line base))
        (apply concat)))
 
-(defn check
+(defn process-file
   [file]
   (let [base (get-filename file)]
     (with-open [input (io/reader file)]
-      (process-lines base (line-seq input)))))
+      (concat
+       ["\n\n\n" (str "// class: " base) "\n"]
+       (process-lines base (line-seq input))))))
+
+(defn process-folder
+  [folder]
+  (->> (.listFiles (io/file folder))
+       (mapv #(.toString %))
+       (filter #(.endsWith % ".vm"))
+       (mapcat process-file)))
+
+(defn attach-header
+  [lines in-path]
+  (concat ["\n\n\n" (str "// program: " (get-filename in-path)) "\n\n\n"]
+          (writer/bootstrap)
+          lines))
+
+(defn output-file
+  [lines in-path]
+  (let [out-path (str (.toString (io/file in-path)) "/" (get-filename in-path) ".asm")]
+    (with-open [output (io/writer out-path)]
+      (doseq [line lines]
+        (.write output line)
+        (.write output "\n")))))
 
 (defn -main
   [in-path]
-  (let [base (get-filename in-path)
-        out-path (str (parent in-path) "/" base ".asm")]
-    (with-open [output (io/writer out-path)]
-      (with-open [input (io/reader in-path)]
-        (->> input
-             (line-seq)
-             (process-lines base)
-             (mapv (fn [line]
-                     (.write output line)
-                     (.write output "\n")
-                     line))
-             (doall))))))
+  (output-file
+   (attach-header
+    (if (is-directory? in-path)
+      (process-folder in-path)
+      (process-file in-path))
+    in-path)
+   in-path))

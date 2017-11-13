@@ -271,6 +271,40 @@
    "A=M"
    "0;JMP"])
 
+(defn fn-call
+  [base line-no fn-name num-args]
+  (concat
+   [(at base line-no)      ;; 1. push return address
+    "D=A"]
+   push-stack
+   ["@LCL"                 ;; 2. push LCL
+    "D=M"]
+   push-stack
+   ["@ARG"                 ;; 3. push ARG
+    "D=M"]
+   push-stack
+   ["@THIS"                ;; 4. push THIS
+    "D=M"]
+   push-stack
+   ["@THAT"                ;; 5. push THAT
+    "D=M"]
+   push-stack              ;; set new ARG (SP - 5 - num-args)
+   [(at num-args)
+    "D=A"
+    "@5"
+    "D=A+D"
+    "@SP"
+    "D=M-D"
+    "@ARG"
+    "M=D"
+    "@SP"                  ;; set new LCL
+    "D=M"
+    "@LCL"
+    "M=D"
+    (at fn-name)           ;; go to fn
+    "0;JMP"
+    (lbl base line-no)]))  ;; return address
+
 (defn write
   [base line-no command]
   (match command    
@@ -313,5 +347,17 @@
     [:function {:fn-name fn-name :num-locals num-locals}]
     (fn-declaration fn-name num-locals)
 
+    [:call {:fn-name fn-name :num-args num-args}]
+    (fn-call base line-no fn-name num-args)
+
     [:return _]
     (fn-return)))
+
+(defn bootstrap
+  []
+  (concat
+   ["@256"
+    "D=A"
+    "@SP"
+    "M=D"]
+   (fn-call "PROGRAM_ROOT" 0 "Sys.init" 0)))
