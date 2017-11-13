@@ -4,8 +4,6 @@
             [clojure.spec.alpha :as s]
             [n2t.util :as util]))
 
-;; -------------------------------------------------------- Conformers
-
 (defn x-keyword?
   [x]
   (cond (keyword? x) x
@@ -27,8 +25,6 @@
         (string? x) (str/split x #" ")
         :else       :clojure.spec/invalid))
 
-;; ------------------------------------------------------- Instruction
-
 (s/def :instruction.arithmetic/bitwise
   #{:add :sub :and :or})
 
@@ -46,11 +42,17 @@
 (s/def ::memory-instruction
   #{:push :pop})
 
-(s/def ::instruction 
-  (s/or :arithmetic ::arithmetic-instruction
-        :memory ::memory-instruction))
+(s/def ::program-flow-instruction
+  #{:label :goto :if-goto})
 
-;; ------------------------------------------------------------- Arg 1
+(s/def ::function-instruction
+  #{:function})
+
+(s/def ::call-instruction
+  #{:call})
+
+(s/def ::return-instruction
+  #{:return})
 
 (s/def :segment/constant
   #{:constant})
@@ -70,18 +72,29 @@
         :fixed :segment/fixed
         :static :segment/static))
 
-(s/def ::arg1
-  (s/or :segment ::segment))
+(s/def ::label 
+  string?)
 
-;; ------------------------------------------------------------- Arg 2
+(s/def ::program-flow-command
+  (s/cat :instruction (s/and (s/conformer x-keyword?)
+                             ::program-flow-instruction)
+         :label ::label))
 
-(s/def ::segment-index
-  (s/int-in 0 65536))
+(s/def ::function-command
+  (s/cat :instruction (s/and (s/conformer x-keyword?)
+                             ::function-instruction)
+         :fn-name ::label
+         :num-locals (s/conformer x-int?)))
 
-(s/def ::arg2
-  (s/or :segment-index ::segment-index))
+(s/def ::call-command
+  (s/cat :instruction (s/and (s/conformer x-keyword?)
+                             ::call-instruction)
+         :fn-name ::label
+         :num-args (s/conformer x-int?)))
 
-;; ----------------------------------------------------------- Command
+(s/def ::return-command
+  (s/cat :instruction (s/and (s/conformer x-keyword?)
+                             ::return-instruction)))
 
 (s/def ::arithmetic-command
   (s/cat :instruction (s/and (s/conformer x-keyword?) 
@@ -92,14 +105,20 @@
                              ::memory-instruction)
          :segment (s/and (s/conformer x-keyword?)
                          ::segment)
-         :index (s/and (s/conformer x-int?)
-                       ::segment-index)))
+         :index (s/conformer x-int?)))
 
 (s/def ::command
   (s/and (s/conformer x-vec?)
-         (s/or :arithmetic ::arithmetic-command
+         (s/or :program-flow ::program-flow-command
+               :function ::function-command
+               :call ::call-command
+               :return ::return-command
+               :arithmetic ::arithmetic-command
                :memory ::memory-command)))
 
 (defn parse-line
   [line]
-  (s/conform ::command line))
+  (let [parsed-line (s/conform ::command line)]
+    (if (= :clojure.spec.alpha/invalid parsed-line)
+      (throw (ex-info (s/explain-str ::command line) {}))
+      parsed-line)))
